@@ -1,4 +1,3 @@
-// Package redis provides a Vice implementation for REDIS.
 package redis
 
 import (
@@ -10,7 +9,6 @@ import (
 	"github.com/go-redis/redis"
 )
 
-// Channel is a vice.Channel for redis.
 type Channel struct {
 	sendChans    map[string]chan []byte
 	receiveChans map[string]chan []byte
@@ -58,13 +56,10 @@ func (t *Channel) newConnection() (*redis.Client, error) {
 		MaxRetries: 0,
 	})
 
-	// test connection
 	_, err = t.client.Ping().Result()
 	return t.client, err
 }
 
-// Receive gets a channel on which to receive messages
-// with the specified name.
 func (t *Channel) P2PReceive(name string) <-chan []byte {
 	t.Lock()
 	defer t.Unlock()
@@ -110,8 +105,6 @@ func (t *Channel) makeSubscriber(name string) (chan []byte, error) {
 	return ch, nil
 }
 
-// Send gets a channel on which messages with the
-// specified name may be sent.
 func (t *Channel) P2PSend(name string) chan<- []byte {
 	t.Lock()
 	defer t.Unlock()
@@ -161,14 +154,10 @@ func (t *Channel) makePublisher(name string) (chan []byte, error) {
 	return ch, nil
 }
 
-// ErrChan gets the channel on which errors are sent.
 func (t *Channel) P2PErrorChan() <-chan error {
 	return t.errChan
 }
 
-// Stop stops the Channel.
-// The channel returned from Done() will be closed
-// when the Channel has stopped.
 func (t *Channel) Close() {
 	close(t.stopSubChan)
 	close(t.stopPubChan)
@@ -177,8 +166,6 @@ func (t *Channel) Close() {
 	close(t.stopchan)
 }
 
-// Done gets a channel which is closed when the
-// Channel has successfully stopped.
 func (t *Channel) Done() chan struct{} {
 	return t.stopchan
 }

@@ -1,4 +1,3 @@
-// Package nsq provides a Vice implementation for NSQ.
 package nsq
 
 import (
@@ -10,41 +9,27 @@ import (
 	"github.com/nsqio/go-nsq"
 )
 
-// DefaultTCPAddr is the default NSQ TCP address.
 const DefaultTCPAddr = "localhost:4150"
 
 
-// Channel is a vice.Channel for NSQ.
 type Channel struct {
 	sm        sync.Mutex
 	sendChans map[string]chan []byte
-
 	rm           sync.Mutex
 	receiveChans map[string]chan []byte
-
 	errChan chan error
-	// stopchan is closed when everything has stopped.
 	stopchan chan struct{}
-	// stopProdChan is closed when producers should stop.
 	stopProdChan chan struct{}
-
 	consumers []*nsq.Consumer
-
-	// producersWG tracks running producers
 	producersWG sync.WaitGroup
 
-	// NewProducer is a func that creates an nsq.Producer.
 	NewProducer func() (*nsq.Producer, error)
 
-	// NewConsumer is a func that creates an nsq.Consumer.
 	NewConsumer func(name string) (*nsq.Consumer, error)
 
-	// ConnectConsumer is a func that connects the nsq.Consumer
-	// to NSQ.
 	ConnectConsumer func(consumer *nsq.Consumer) error
 }
 
-// New makes a new Channel.
 func New() *Channel {
 	return &Channel{
 		sendChans:    make(map[string]chan []byte),
@@ -87,13 +72,10 @@ func (t * Channel) Init (){
 
 }
 
-// ErrChan gets the channel on which errors are sent.
 func (t *Channel) ErrChan() <-chan error {
 	return t.errChan
 }
 
-// Receive gets a channel on which to receive messages
-// with the specifried name.
 func (t *Channel) RegisterReceiver(name string) <-chan []byte {
 	t.rm.Lock()
 	defer t.rm.Unlock()
@@ -104,9 +86,7 @@ func (t *Channel) RegisterReceiver(name string) <-chan []byte {
 	}
 	var err error
 	if ch, err = t.makeConsumer(name); err != nil {
-		// failed to make a consumer, so send an error down the
-		// ReceiveErrs channel and return an empty channel to
-		// avoid panic.
+		
 		t.errChan <- &channel.CommError{Name: name, CommErr: err}
 		return make(chan []byte)
 	}
@@ -122,7 +102,7 @@ func (t *Channel) makeConsumer(name string) (chan []byte, error) {
 	}
 	consumer.AddHandler(nsq.HandlerFunc(func(message *nsq.Message) error {
 		body := message.Body
-		message.Finish() // sends the ACK to avoid long blocking
+		message.Finish() 
 		ch <- body
 		return nil
 	}))
@@ -137,8 +117,6 @@ func (t *Channel) makeConsumer(name string) (chan []byte, error) {
 	return ch, nil
 }
 
-// Send gets a channel on which messages with the
-// specified name may be sent.
 func (t *Channel) RegisterSender(name string) chan<- []byte {
 	t.sm.Lock()
 	defer t.sm.Unlock()
@@ -150,9 +128,6 @@ func (t *Channel) RegisterSender(name string) chan<- []byte {
 	var err error
 	ch, err = t.makeProducer(name)
 	if err != nil {
-		// failed to make a producer, send an error down the
-		// sendErrsChan and return an empty channel so we don't
-		// panic.
 		t.errChan <- &channel.CommError{Name: name, CommErr: err}
 		return make(chan []byte)
 	}
@@ -190,11 +165,8 @@ func (t *Channel) makeProducer(name string) (chan []byte, error) {
 	return ch, nil
 }
 
-// Stop stops the Channel.
-// The channel returned from Done() will be closed
-// when the Channel has stopped.
 func (t *Channel) Close() {
-	// stops and waits for the producers
+	
 	close(t.stopProdChan)
 	t.producersWG.Wait()
 
@@ -205,8 +177,6 @@ func (t *Channel) Close() {
 	close(t.stopchan)
 }
 
-// Done gets a channel which is closed when the
-// Channel has successfully stopped.
 func (t *Channel) Done() chan struct{} {
 	return t.stopchan
 }
