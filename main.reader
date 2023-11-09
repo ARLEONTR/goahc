@@ -1,0 +1,108 @@
+
+import (
+	"bufio"
+	"context"
+	"fmt"
+	"goahc/channel/queues/nsq"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+)
+
+
+
+func compA() {
+	ctx := context.Background()
+	ctx, cancel := context.WithCancel(ctx)
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	defer func() {
+		signal.Stop(c)
+		cancel()
+	}()
+	go func() {
+		select {
+		case <-c:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	channel := nsq.New()
+	names := channel.Send("names")
+	greetings := channel.Receive("greetings")
+	go func() {
+		for greeting := range greetings {
+			fmt.Println(string(greeting))
+		}
+	}()
+	go func() {
+		fmt.Println("Type some names to send through the |names| channel:")
+		s := bufio.NewScanner(os.Stdin)
+		for s.Scan() {
+			b := s.Bytes()
+			if len(b) == 0 {
+				continue
+			}
+			names <- b
+		}
+		if err := s.Err(); err != nil {
+			log.Println(err)
+		}
+	}()
+	<-ctx.Done()
+	channel.Stop()
+	<-channel.Done()
+	log.Println("channel stopped")
+}
+
+
+func Greeter(ctx context.Context, names <-chan []byte, greetings chan<- []byte, errs <-chan error) {
+	for {
+		select {
+		case <-ctx.Done():
+			log.Println("finished")
+			return
+		case err := <-errs:
+			log.Println("an error occurred:", err)
+		case name := <-names:
+			greeting := "Hello, your name is " + string(name)
+			greetings <- []byte(greeting)
+		}
+	}
+}
+
+func compB() {
+	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(ctx, 1*time.Minute)
+	defer cancel()
+	channel := nsq.New()
+	defer func() {
+		channel.Stop()
+		<-channel.Done()
+	}()
+	names := channel.Receive("names")
+	greetings := channel.Send("greetings")
+	Greeter(ctx, names, greetings, channel.ErrChan())
+}
+
+
+func main (){
+	
+	fmt.Println("Welcome to GOLANG AHC")
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	done := make(chan bool, 1)
+	go compA()
+	go compB()
+	go func() {
+        sig := <-sigs
+        fmt.Println()
+        fmt.Println(sig)
+        done <- true
+    }()
+	fmt.Println("awaiting exit signal Ctrl-C")
+    <-done
+    fmt.Println("exiting")
+}
