@@ -2,9 +2,10 @@
 package nsq
 
 import (
-	"goahc/channel"
 	"sync"
 	"time"
+
+	"github.com/arleontr/goahc/channel"
 
 	"github.com/nsqio/go-nsq"
 )

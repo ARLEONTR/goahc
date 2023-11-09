@@ -1,4 +1,4 @@
-module goahc
+module github.com/arleontr/goahc
 
 go 1.20
 

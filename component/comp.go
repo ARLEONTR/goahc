@@ -3,11 +3,12 @@ package component
 import (
 	"context"
 	"fmt"
-	"goahc/channel"
-	"goahc/channel/queues/nsq"
 	"os"
 	"os/signal"
 	"time"
+
+	"github.com/arleontr/goahc/channel"
+	"github.com/arleontr/goahc/channel/queues/nsq"
 
 	"github.com/google/uuid"
 )

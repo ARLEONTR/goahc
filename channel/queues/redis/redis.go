@@ -2,9 +2,10 @@
 package redis
 
 import (
-	"goahc/channel"
 	"sync"
 	"time"
+
+	"github.com/arleontr/goahc/channel"
 
 	"github.com/go-redis/redis"
 )

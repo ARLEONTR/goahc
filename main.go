@@ -1,8 +1,9 @@
 package main
 
 import (
-	"goahc/component"
 	"time"
+
+	"github.com/arleontr/goahc/component"
 )
 
 
