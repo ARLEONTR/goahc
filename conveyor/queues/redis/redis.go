@@ -4,12 +4,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/arleontr/goahc/channel"
-
+	"github.com/arleontr/goahc/conveyor"
 	"github.com/go-redis/redis"
 )
 
-type Channel struct {
+type Conveyor struct {
 	sendChans    map[string]chan []byte
 	receiveChans map[string]chan []byte
 
@@ -25,13 +24,13 @@ type Channel struct {
 }
 
 // New returns a new Channel
-func New(opts ...Option) *Channel {
+func New(opts ...Option) *Conveyor {
 	var options Options
 	for _, o := range opts {
 		o(&options)
 	}
 
-	return &Channel{
+	return &Conveyor{
 		sendChans:    make(map[string]chan []byte),
 		receiveChans: make(map[string]chan []byte),
 		errChan:      make(chan error, 10),
@@ -42,7 +41,7 @@ func New(opts ...Option) *Channel {
 	}
 }
 
-func (t *Channel) newConnection() (*redis.Client, error) {
+func (t *Conveyor) newConnection() (*redis.Client, error) {
 	var err error
 	if t.client != nil {
 		return t.client, nil
@@ -60,7 +59,7 @@ func (t *Channel) newConnection() (*redis.Client, error) {
 	return t.client, err
 }
 
-func (t *Channel) P2PReceive(name string) <-chan []byte {
+func (t *Conveyor) P2PReceive(name string) <-chan []byte {
 	t.Lock()
 	defer t.Unlock()
 
@@ -71,7 +70,7 @@ func (t *Channel) P2PReceive(name string) <-chan []byte {
 
 	ch, err := t.makeSubscriber(name)
 	if err != nil {
-		t.errChan <- &channel.CommError{Name: name, CommErr: err}
+		t.errChan <- &conveyor.CommError{Name: name, CommErr: err}
 		return make(chan []byte)
 	}
 
@@ -79,7 +78,7 @@ func (t *Channel) P2PReceive(name string) <-chan []byte {
 	return ch
 }
 
-func (t *Channel) makeSubscriber(name string) (chan []byte, error) {
+func (t *Conveyor) makeSubscriber(name string) (chan []byte, error) {
 	c, err := t.newConnection()
 	if err != nil {
 		return nil, err
@@ -94,7 +93,7 @@ func (t *Channel) makeSubscriber(name string) (chan []byte, error) {
 				case <-t.stopSubChan:
 					return
 				default:
-					t.errChan <- &channel.CommError{Name: name, CommErr: err}
+					t.errChan <- &conveyor.CommError{Name: name, CommErr: err}
 					continue
 				}
 			}
@@ -105,7 +104,7 @@ func (t *Channel) makeSubscriber(name string) (chan []byte, error) {
 	return ch, nil
 }
 
-func (t *Channel) P2PSend(name string) chan<- []byte {
+func (t *Conveyor) P2PSend(name string) chan<- []byte {
 	t.Lock()
 	defer t.Unlock()
 
@@ -116,14 +115,14 @@ func (t *Channel) P2PSend(name string) chan<- []byte {
 
 	ch, err := t.makePublisher(name)
 	if err != nil {
-		t.errChan <- &channel.CommError{Name: name, CommErr: err}
+		t.errChan <- &conveyor.CommError{Name: name, CommErr: err}
 		return make(chan []byte)
 	}
 	t.sendChans[name] = ch
 	return ch
 }
 
-func (t *Channel) makePublisher(name string) (chan []byte, error) {
+func (t *Conveyor) makePublisher(name string) (chan []byte, error) {
 	c, err := t.newConnection()
 	if err != nil {
 		return nil, err
@@ -146,7 +145,7 @@ func (t *Channel) makePublisher(name string) (chan []byte, error) {
 			case msg := <-ch:
 				err := c.RPush(name, string(msg)).Err()
 				if err != nil {
-					t.errChan <- &channel.CommError{Message: msg, Name: name, CommErr: err}
+					t.errChan <- &conveyor.CommError{Message: msg, Name: name, CommErr: err}
 				}
 			}
 		}
@@ -154,11 +153,11 @@ func (t *Channel) makePublisher(name string) (chan []byte, error) {
 	return ch, nil
 }
 
-func (t *Channel) P2PErrorChan() <-chan error {
+func (t *Conveyor) P2PErrorChan() <-chan error {
 	return t.errChan
 }
 
-func (t *Channel) Close() {
+func (t *Conveyor) Close() {
 	close(t.stopSubChan)
 	close(t.stopPubChan)
 	t.wg.Wait()
@@ -166,6 +165,6 @@ func (t *Channel) Close() {
 	close(t.stopchan)
 }
 
-func (t *Channel) Done() chan struct{} {
+func (t *Conveyor) Done() chan struct{} {
 	return t.stopchan
 }

@@ -1,8 +1,8 @@
-package channel
+package conveyor
 
 import "fmt"
 
-type Channel interface {
+type Conveyor interface {
 	Init()
 	RegisterReceiver(name string) <-chan []byte
 	RegisterSender(name string) chan<- []byte

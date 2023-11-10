@@ -4,15 +4,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/arleontr/goahc/channel"
-
+	"github.com/arleontr/goahc/conveyor"
 	"github.com/nsqio/go-nsq"
 )
 
 const DefaultTCPAddr = "localhost:4150"
 
 
-type Channel struct {
+type Conveyor struct {
 	sm        sync.Mutex
 	sendChans map[string]chan []byte
 	rm           sync.Mutex
@@ -30,8 +29,8 @@ type Channel struct {
 	ConnectConsumer func(consumer *nsq.Consumer) error
 }
 
-func New() *Channel {
-	return &Channel{
+func New() *Conveyor {
+	return &Conveyor{
 		sendChans:    make(map[string]chan []byte),
 		receiveChans: make(map[string]chan []byte),
 
@@ -53,7 +52,7 @@ func New() *Channel {
 	}
 }
 
-func (t * Channel) Init (){
+func (t * Conveyor) Init (){
 	t.sendChans=    make(map[string]chan []byte)
 	t.receiveChans= make(map[string]chan []byte)
 	t.stopchan=     make(chan struct{})
@@ -72,11 +71,11 @@ func (t * Channel) Init (){
 
 }
 
-func (t *Channel) ErrChan() <-chan error {
+func (t *Conveyor) ErrChan() <-chan error {
 	return t.errChan
 }
 
-func (t *Channel) RegisterReceiver(name string) <-chan []byte {
+func (t *Conveyor) RegisterReceiver(name string) <-chan []byte {
 	t.rm.Lock()
 	defer t.rm.Unlock()
 
@@ -87,14 +86,14 @@ func (t *Channel) RegisterReceiver(name string) <-chan []byte {
 	var err error
 	if ch, err = t.makeConsumer(name); err != nil {
 		
-		t.errChan <- &channel.CommError{Name: name, CommErr: err}
+		t.errChan <- &conveyor.CommError{Name: name, CommErr: err}
 		return make(chan []byte)
 	}
 	t.receiveChans[name] = ch
 	return ch
 }
 
-func (t *Channel) makeConsumer(name string) (chan []byte, error) {
+func (t *Conveyor) makeConsumer(name string) (chan []byte, error) {
 	ch := make(chan []byte)
 	consumer, err := t.NewConsumer(name)
 	if err != nil {
@@ -107,7 +106,7 @@ func (t *Channel) makeConsumer(name string) (chan []byte, error) {
 		return nil
 	}))
 
-	err = channel.Backoff(1*time.Second, 10*time.Minute, 0, func() error {
+	err = conveyor.Backoff(1*time.Second, 10*time.Minute, 0, func() error {
 		return t.ConnectConsumer(consumer)
 	})
 	if err != nil {
@@ -117,7 +116,7 @@ func (t *Channel) makeConsumer(name string) (chan []byte, error) {
 	return ch, nil
 }
 
-func (t *Channel) RegisterSender(name string) chan<- []byte {
+func (t *Conveyor) RegisterSender(name string) chan<- []byte {
 	t.sm.Lock()
 	defer t.sm.Unlock()
 
@@ -128,14 +127,14 @@ func (t *Channel) RegisterSender(name string) chan<- []byte {
 	var err error
 	ch, err = t.makeProducer(name)
 	if err != nil {
-		t.errChan <- &channel.CommError{Name: name, CommErr: err}
+		t.errChan <- &conveyor.CommError{Name: name, CommErr: err}
 		return make(chan []byte)
 	}
 	t.sendChans[name] = ch
 	return ch
 }
 
-func (t *Channel) makeProducer(name string) (chan []byte, error) {
+func (t *Conveyor) makeProducer(name string) (chan []byte, error) {
 	ch := make(chan []byte)
 	producer, err := t.NewProducer()
 	if err != nil {
@@ -152,11 +151,11 @@ func (t *Channel) makeProducer(name string) (chan []byte, error) {
 			case <-t.stopProdChan:
 				return
 			case msg := <-ch:
-				err = channel.Backoff(1*time.Second, 10*time.Minute, 10, func() error {
+				err = conveyor.Backoff(1*time.Second, 10*time.Minute, 10, func() error {
 					return producer.Publish(name, msg)
 				})
 				if err != nil {
-					t.errChan <- &channel.CommError{Message: msg, Name: name, CommErr: err}
+					t.errChan <- &conveyor.CommError{Message: msg, Name: name, CommErr: err}
 					continue
 				}
 			}
@@ -165,7 +164,7 @@ func (t *Channel) makeProducer(name string) (chan []byte, error) {
 	return ch, nil
 }
 
-func (t *Channel) Close() {
+func (t *Conveyor) Close() {
 	
 	close(t.stopProdChan)
 	t.producersWG.Wait()
@@ -177,6 +176,6 @@ func (t *Channel) Close() {
 	close(t.stopchan)
 }
 
-func (t *Channel) Done() chan struct{} {
+func (t *Conveyor) Done() chan struct{} {
 	return t.stopchan
 }

@@ -7,11 +7,21 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/arleontr/goahc/channel"
-	"github.com/arleontr/goahc/channel/queues/nsq"
+	"github.com/arleontr/goahc/conveyor"
+	"github.com/arleontr/goahc/conveyor/queues/nsq"
 
 	"github.com/google/uuid"
 )
+
+
+type ComponentInterface interface {
+	Init(name string)
+	Connect(to Component)
+	Run()
+	Stop()
+	ToString() string
+}
+
 
 // Component is the base class for implementing a primitive component type
 type Component struct {
@@ -20,7 +30,7 @@ type Component struct {
 	ctx context.Context
 	cancel context.CancelFunc
 	c chan os.Signal
-	Commch channel.Channel
+	Commch conveyor.Conveyor
 }
 
 func New () *Component{
@@ -40,7 +50,7 @@ func (c * Component) Init(name string) {
 	c.ctx, c.cancel = context.WithCancel(c.ctx)
 	c.c = make(chan os.Signal, 1)
 	
-	c.Commch = &nsq.Channel{}
+	c.Commch = &nsq.Conveyor{}
 	c.Commch.Init()
 	
 
