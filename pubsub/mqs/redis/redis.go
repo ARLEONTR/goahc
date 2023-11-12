@@ -4,11 +4,23 @@ import (
 	"sync"
 	"time"
 
-	"github.com/arleontr/goahc/conveyor"
+	"github.com/arleontr/goahc/pubsub"
 	"github.com/go-redis/redis"
 )
 
-type Conveyor struct {
+type Options struct {
+	Client *redis.Client
+}
+
+type Option func(*Options)
+
+func WithClient(c *redis.Client) Option {
+	return func(o *Options) {
+		o.Client = c
+	}
+}
+
+type PSMQ struct {
 	sendChans    map[string]chan []byte
 	receiveChans map[string]chan []byte
 
@@ -19,29 +31,31 @@ type Conveyor struct {
 	stopchan    chan struct{}
 	stopPubChan chan struct{}
 	stopSubChan chan struct{}
-
-	client *redis.Client
+	opts        []Option
+	client      *redis.Client
 }
 
 // New returns a new Channel
-func New(opts ...Option) *Conveyor {
+func New(opts ...Option) *PSMQ {
+	conv := &PSMQ{}
+	conv.opts = opts
+	return conv
+}
+func (t *PSMQ) Init() {
 	var options Options
-	for _, o := range opts {
+	for _, o := range t.opts {
 		o(&options)
 	}
-
-	return &Conveyor{
-		sendChans:    make(map[string]chan []byte),
-		receiveChans: make(map[string]chan []byte),
-		errChan:      make(chan error, 10),
-		stopchan:     make(chan struct{}),
-		stopPubChan:  make(chan struct{}),
-		stopSubChan:  make(chan struct{}),
-		client:       options.Client,
-	}
+	t.sendChans = make(map[string]chan []byte)
+	t.receiveChans = make(map[string]chan []byte)
+	t.errChan = make(chan error, 10)
+	t.stopchan = make(chan struct{})
+	t.stopPubChan = make(chan struct{})
+	t.stopSubChan = make(chan struct{})
+	t.client = options.Client
 }
 
-func (t *Conveyor) newConnection() (*redis.Client, error) {
+func (t *PSMQ) newConnection() (*redis.Client, error) {
 	var err error
 	if t.client != nil {
 		return t.client, nil
@@ -59,7 +73,7 @@ func (t *Conveyor) newConnection() (*redis.Client, error) {
 	return t.client, err
 }
 
-func (t *Conveyor) P2PReceive(name string) <-chan []byte {
+func (t *PSMQ) SubscribeToTopic(name string) <-chan []byte {
 	t.Lock()
 	defer t.Unlock()
 
@@ -70,7 +84,7 @@ func (t *Conveyor) P2PReceive(name string) <-chan []byte {
 
 	ch, err := t.makeSubscriber(name)
 	if err != nil {
-		t.errChan <- &conveyor.CommError{Name: name, CommErr: err}
+		t.errChan <- &pubsub.CommError{Name: name, CommErr: err}
 		return make(chan []byte)
 	}
 
@@ -78,7 +92,7 @@ func (t *Conveyor) P2PReceive(name string) <-chan []byte {
 	return ch
 }
 
-func (t *Conveyor) makeSubscriber(name string) (chan []byte, error) {
+func (t *PSMQ) makeSubscriber(name string) (chan []byte, error) {
 	c, err := t.newConnection()
 	if err != nil {
 		return nil, err
@@ -93,7 +107,7 @@ func (t *Conveyor) makeSubscriber(name string) (chan []byte, error) {
 				case <-t.stopSubChan:
 					return
 				default:
-					t.errChan <- &conveyor.CommError{Name: name, CommErr: err}
+					t.errChan <- &pubsub.CommError{Name: name, CommErr: err}
 					continue
 				}
 			}
@@ -104,7 +118,7 @@ func (t *Conveyor) makeSubscriber(name string) (chan []byte, error) {
 	return ch, nil
 }
 
-func (t *Conveyor) P2PSend(name string) chan<- []byte {
+func (t *PSMQ) CreatePublishTopic(name string) chan<- []byte {
 	t.Lock()
 	defer t.Unlock()
 
@@ -115,14 +129,14 @@ func (t *Conveyor) P2PSend(name string) chan<- []byte {
 
 	ch, err := t.makePublisher(name)
 	if err != nil {
-		t.errChan <- &conveyor.CommError{Name: name, CommErr: err}
+		t.errChan <- &pubsub.CommError{Name: name, CommErr: err}
 		return make(chan []byte)
 	}
 	t.sendChans[name] = ch
 	return ch
 }
 
-func (t *Conveyor) makePublisher(name string) (chan []byte, error) {
+func (t *PSMQ) makePublisher(name string) (chan []byte, error) {
 	c, err := t.newConnection()
 	if err != nil {
 		return nil, err
@@ -145,7 +159,7 @@ func (t *Conveyor) makePublisher(name string) (chan []byte, error) {
 			case msg := <-ch:
 				err := c.RPush(name, string(msg)).Err()
 				if err != nil {
-					t.errChan <- &conveyor.CommError{Message: msg, Name: name, CommErr: err}
+					t.errChan <- &pubsub.CommError{Message: msg, Name: name, CommErr: err}
 				}
 			}
 		}
@@ -153,11 +167,11 @@ func (t *Conveyor) makePublisher(name string) (chan []byte, error) {
 	return ch, nil
 }
 
-func (t *Conveyor) P2PErrorChan() <-chan error {
+func (t *PSMQ) P2PErrorChan() <-chan error {
 	return t.errChan
 }
 
-func (t *Conveyor) Close() {
+func (t *PSMQ) Close() {
 	close(t.stopSubChan)
 	close(t.stopPubChan)
 	t.wg.Wait()
@@ -165,6 +179,6 @@ func (t *Conveyor) Close() {
 	close(t.stopchan)
 }
 
-func (t *Conveyor) Done() chan struct{} {
+func (t *PSMQ) Done() chan struct{} {
 	return t.stopchan
 }

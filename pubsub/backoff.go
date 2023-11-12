@@ -1,4 +1,4 @@
-package conveyor
+package pubsub
 
 import (
 	"log"
