@@ -1,9 +1,8 @@
 package goch
 
 type PSMQ struct {
-	errChan   chan error
-	receiveCh <-chan []byte
-	//sendCh       chan<- []byte
+	errChan     chan error
+	receiveCh   <-chan []byte
 	sendChs     map[string]chan<- []byte
 	stopchan    chan struct{}
 	pubsubagent *PubSubAgent
@@ -18,10 +17,11 @@ func (c *PSMQ) Init() {
 	c.receiveCh = make(<-chan []byte)
 	c.sendChs = make(map[string]chan<- []byte)
 	c.stopchan = make(chan struct{})
+	c.errChan = make(chan error, 10)
 	c.pubsubagent = NewPubSubAgent() //singleton
 }
 
-func (c *PSMQ) ErrChan() <-chan error {
+func (c *PSMQ) ErrChan() chan error {
 	return c.errChan
 }
 
@@ -31,7 +31,7 @@ func (c *PSMQ) SubscribeToTopic(name string) <-chan []byte {
 }
 
 func (c *PSMQ) CreatePublishTopic(name string) chan<- []byte {
-	ch := make(chan []byte)
+	ch := make(chan []byte, 100)
 	c.sendChs[name] = ch
 	go func(c *PSMQ, name string, ch chan []byte) {
 		for {

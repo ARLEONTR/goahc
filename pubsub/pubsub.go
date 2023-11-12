@@ -6,7 +6,7 @@ type PSMQ interface {
 	Init()
 	SubscribeToTopic(name string) <-chan []byte   //Subscribe to a topic
 	CreatePublishTopic(name string) chan<- []byte //Create a publicaton topic
-	//P2PErrorChan() <-chan error
+	ErrChan() chan error
 	Close()
 	Done() chan struct{}
 }

@@ -51,7 +51,7 @@ func (t *PSMQ) Init() {
 
 }
 
-func (t *PSMQ) ErrChan() <-chan error {
+func (t *PSMQ) ErrChan() chan error {
 	return t.errChan
 }
 

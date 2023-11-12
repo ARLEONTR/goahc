@@ -63,7 +63,7 @@ func (b *PubSubAgent) Subscribe(topic string) <-chan []byte {
 		return nil
 	}
 
-	ch := make(chan []byte)
+	ch := make(chan []byte, 100)
 	b.subs[topic] = append(b.subs[topic], ch)
 	return ch
 }

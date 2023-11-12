@@ -167,7 +167,7 @@ func (t *PSMQ) makePublisher(name string) (chan []byte, error) {
 	return ch, nil
 }
 
-func (t *PSMQ) P2PErrorChan() <-chan error {
+func (t *PSMQ) ErrChan() chan error {
 	return t.errChan
 }
 

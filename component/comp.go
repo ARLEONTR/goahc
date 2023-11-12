@@ -12,9 +12,6 @@ import (
 	"github.com/arleontr/goahc/pubsub/mqs/goch"
 	"github.com/arleontr/goahc/pubsub/mqs/nsq"
 	"github.com/arleontr/goahc/pubsub/mqs/redis"
-	"github.com/arleontr/goahc/utils"
-
-	"github.com/google/uuid"
 )
 
 type PortType string
@@ -25,10 +22,10 @@ const (
 )
 
 type ComponentInterface interface {
-	Init(name string, queuetype pubsub.QueueType) //Create two PUB topics (HOSTNAME-UUID-NORTH and HOSTNAME-UUID-SOUTH)
+	Init(name string, queuetype pubsub.QueueType) //Create two PUB topics (HOSTIP-Name-NORTH and HOSTIP-Name-SOUTH)
 	Connect(toid string, port PortType)           //Self subscribes to toid's port {SOUTH or NORTH}
-	SendSouth(msg []byte)                         //publish to HOSTNAME-UUID-SOUTH
-	SendNorth(msg []byte)                         //publish to HOSTNAME-UUID-NORTH
+	SendSouth(msg []byte)                         //publish to HOSTIP-Name-SOUTH
+	SendNorth(msg []byte)                         //publish to HOSTIP-Name-NORTH
 	Run()                                         //Message and event handler is implemented here
 	Stop()                                        //Stop the goroutine
 	ToString() string                             //For debug purposes, print unique name in the system
@@ -36,14 +33,14 @@ type ComponentInterface interface {
 
 // Component is the base class for implementing a primitive component type
 type Component struct {
-	name   string
-	ID     string
-	ctx    context.Context
-	cancel context.CancelFunc
-	c      chan os.Signal
-	queue  pubsub.PSMQ
-	InChs  []<-chan []byte
-
+	name       string
+	ID         string
+	ctx        context.Context
+	cancel     context.CancelFunc
+	c          chan os.Signal
+	queue      pubsub.PSMQ
+	InChs      []<-chan []byte
+	errChan    chan error
 	NorthCh    chan<- []byte
 	SouthCh    chan<- []byte
 	northtopic string
@@ -63,7 +60,7 @@ func (c *Component) ToString() string {
 // TODO: Convert queuetype and some future vars into variadic options...
 func (c *Component) Init(name string, queuetype pubsub.QueueType) {
 	c.name = name
-	c.ID = utils.GetLocalIP() + ":" + uuid.New().String()
+	c.ID = c.name
 	c.ctx = context.Background()
 	c.ctx, c.cancel = context.WithCancel(c.ctx)
 	c.c = make(chan os.Signal, 1)
@@ -81,11 +78,12 @@ func (c *Component) Init(name string, queuetype pubsub.QueueType) {
 	}
 	c.queue.Init()
 	// Create pub topics north and south
-	c.northtopic = "NORTH-" + c.ID
-	c.southtopic = "SOUTH-" + c.ID
+	c.northtopic = c.ID + "-" + string(NORTH)
+	c.southtopic = c.ID + "-" + string(SOUTH)
 	c.NorthCh = c.queue.CreatePublishTopic(c.northtopic)
 	c.SouthCh = c.queue.CreatePublishTopic(c.southtopic)
 	fmt.Println("Component ", c.ID, " is initialized\n", c.northtopic, "\n", c.southtopic)
+	c.errChan = c.queue.ErrChan()
 }
 
 func (c *Component) Stop() {
@@ -95,10 +93,10 @@ func (c *Component) Stop() {
 }
 
 func (c *Component) Connect(id string, port PortType) {
-	topic := string(port) + "-" + id
+	topic := id + "-" + string(port)
 	ch := c.queue.SubscribeToTopic(topic)
 	c.InChs = append(c.InChs, ch)
-	fmt.Println(c.ID, " to subscribes to ", topic)
+	fmt.Println(c.ID, " subscribes to ", topic)
 	fmt.Println(c.InChs)
 }
 
@@ -148,13 +146,15 @@ func (c *Component) Run() {
 			c.Stop()
 		case <-c.ctx.Done():
 			c.Stop()
+		case err := <-c.errChan:
+			fmt.Println("Error channel happened ", err)
 		default:
-			fmt.Println("Run ", c.ID, " ...default")
+			fmt.Println("Running ", c.ID)
 			chosen, val, err := c.Select()
 			if err != nil {
 				fmt.Println("Error occured ", err)
 			} else {
-				fmt.Println("received msg from ", chosen, string(val), err) //Process message val
+				fmt.Println("I am ", c.ID, "received msg from ", chosen, string(val), err) //Process message val
 
 			}
 
